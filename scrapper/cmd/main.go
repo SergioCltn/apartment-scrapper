@@ -6,12 +6,9 @@ import (
 
 	"github.com/sergiocltn/apartment-scrapper/internal/config"
 	"github.com/sergiocltn/apartment-scrapper/internal/provider"
+	"github.com/sergiocltn/apartment-scrapper/internal/repository"
 	"github.com/sergiocltn/apartment-scrapper/internal/service"
 )
-
-func runScraper() error {
-	return service.ScrapeFullList()
-}
 
 func main() {
 	provider.InitLogger()
@@ -19,9 +16,18 @@ func main() {
 	if err := config.InitSQLite(); err != nil {
 		provider.ErrorLogger.Fatalf("InitSqlite failed: %v", err)
 	}
+	db := config.DB
 
-	defer config.CloseDB()
-	if err := runScraper(); err != nil {
+	apartmentRepo := *repository.NewApartmentRepository(db)
+	if err := apartmentRepo.Initialize(); err != nil {
+		provider.ErrorLogger.Fatalf("Failed to initialize apartment repository: %v", err)
 	}
+
+	svc := service.NewService(apartmentRepo)
+
+	if err := svc.ScrapeFullList(); err != nil {
+		provider.ErrorLogger.Fatalf("Scraping failed: %v", err)
+	}
+
 	provider.InfoLogger.Println("Scraper completed successfully")
 }

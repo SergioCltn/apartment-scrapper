@@ -33,7 +33,6 @@ func ScrapeList(page int) (ScrapedListData, error) {
 	for key, value := range headers {
 		req.Header.Set(key, value)
 	}
-	fmt.Println(req.Header)
 
 	resp, err := client.Do(req)
 	if err != nil {

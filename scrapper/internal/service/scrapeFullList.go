@@ -7,23 +7,27 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sergiocltn/apartment-scrapper/internal/config"
 	"github.com/sergiocltn/apartment-scrapper/internal/model"
 	"github.com/sergiocltn/apartment-scrapper/internal/provider"
 	"github.com/sergiocltn/apartment-scrapper/internal/provider/scrapper"
 	"github.com/sergiocltn/apartment-scrapper/internal/repository"
 )
 
+type Service struct {
+	ApartmentRepo repository.ApartmentRepository
+}
+
+func NewService(apartmentRepo repository.ApartmentRepository) *Service {
+	return &Service{
+		ApartmentRepo: apartmentRepo,
+	}
+}
+
 func sleep(ms int) {
 	time.Sleep(time.Duration(ms) * time.Millisecond)
 }
 
-func ScrapeFullList() error {
-	apartmentRepo := repository.NewApartmentRepository(config.DB)
-	if err := apartmentRepo.Initialize(); err != nil {
-		return fmt.Errorf("failed to initialize repository: %v", err)
-	}
-
+func (s *Service) ScrapeFullList() error {
 	var firstID string
 	page := 1
 
@@ -46,7 +50,7 @@ func ScrapeFullList() error {
 		provider.InfoLogger.Printf("Analyzing page: %d", page)
 
 		for _, apartmentID := range scrapedList.PropertyIDs {
-			exists, err := apartmentRepo.Exists(apartmentID)
+			exists, err := s.ApartmentRepo.Exists(apartmentID)
 			if err != nil {
 				provider.ErrorLogger.Printf("Error checking existence of %s: %v", apartmentID, err)
 				continue
@@ -79,7 +83,7 @@ func ScrapeFullList() error {
 				CreatedAt:         time.Now(),
 			}
 
-			if err := apartmentRepo.Save(apartment); err != nil {
+			if err := s.ApartmentRepo.Save(apartment); err != nil {
 				provider.ErrorLogger.Printf("Failed to save apartment %s: %v", apartmentID, err)
 				continue
 			}
