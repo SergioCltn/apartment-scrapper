@@ -1,0 +1,18 @@
+FROM golang:1.23 AS builder
+
+WORKDIR /app
+
+ARG TARGET_OS=linux
+
+COPY go.mod go.sum ./
+
+RUN go mod download
+
+COPY . .
+
+# -o specifies the output name (e.g., "apartment-scrapper" or "apartment-scrapper.exe" for Windows)
+RUN if [ "$TARGET_OS" = "windows" ]; then \
+        CGO_ENABLED=0 GOOS=$TARGET_OS go build -o apartment-scrapper.exe ./cmd/main.go; \
+    else \
+        CGO_ENABLED=0 GOOS=$TARGET_OS go build -o apartment-scrapper ./cmd/main.go; \
+    fi
