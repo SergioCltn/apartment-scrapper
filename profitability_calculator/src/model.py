@@ -1,7 +1,8 @@
 import json
 import logging
 import re
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, fields, is_dataclass
+from typing import Any
 
 logging.basicConfig(
     level=logging.INFO,
@@ -9,8 +10,13 @@ logging.basicConfig(
 )
 
 
+class FlatSerializable:
+    def to_flat_dict(self, prefix: str = None) -> dict[str, Any]:
+        """Convert the dataclass into a flat dictionary."""
+
+
 @dataclass
-class Address:
+class Address(FlatSerializable):
     street: str | None = None
     number: str | None = None
     neighborhood: str | None = None
@@ -59,9 +65,12 @@ class Address:
 
         return address
 
+    def to_flat_dict(self, prefix="address") -> dict[str, Any]:
+        return {f"{prefix}_{k}": v for k, v in asdict(self).items()}
+
 
 @dataclass
-class Details:
+class Details(FlatSerializable):
     n_rooms: int | None = None
     sqm_constructed: float | None = None
     sqm_usable: float | None = None
@@ -226,9 +235,12 @@ class Details:
 
         return details
 
+    def to_flat_dict(self, prefix="details") -> dict[str, Any]:
+        return {f"{prefix}_{k}": v for k, v in asdict(self).items()}
+
 
 @dataclass
-class Apartment:
+class Apartment(FlatSerializable):
     id: int | None = None
     title: str | None = None
     property_price_euros: float | None = None
@@ -252,43 +264,54 @@ class Apartment:
             Apartment: An instance of the Apartment class populated with the provided data.
 
         """
-        apartment_info = {
-            "id": None,
-            "title": None,
-            "property_price_euros": None,
-            "price_per_sqm": None,
-            "monthly_community_fees_euros": None,
-            "location": None,
-            "description": None,
-        }
-
         outer_keys_map = {
-            "id": "id",
-            "title": "title",
             "propertyPrice": "property_price_euros",
             "pricePerSqm": "price_per_sqm",
             "communityFees": "monthly_community_fees_euros",
-            "description": "description",
-            "location": "location",
         }
 
+        apartment_info = {}
         address = None
         details = None
-
         for k, value in raw_apartment.items():
             if k == "location":
                 address = Address.from_location(value)
-
-            if k in outer_keys_map:
-                apartment_info[outer_keys_map[k]] = value
+                apartment_info[k] = value
             elif k == "details":
                 raw_details = json.loads(value)
                 details = Details.from_raw_details(
                     raw_details=raw_details,
                 )
+            elif k in outer_keys_map:
+                print(f"{k=}, {value=}")
+                if value is not None:
+                    apartment_info[outer_keys_map[k]] = float(
+                        re.search(
+                            r"(\d{1,3}(?:\.\d{3})*)(?:\s?.*)?",
+                            value,
+                        )
+                        .group(1)
+                        .replace(".", ""),
+                    )
+            elif k in ["title", "description", "id"]:
+                apartment_info[k] = value
 
         apartment = cls(**apartment_info)
         apartment.address = address
         apartment.details = details
 
         return apartment
+
+    def to_flat_dict(self, prefix="apartment") -> dict[str, Any]:
+        base = {}
+
+        for field in fields(self):
+            value = getattr(self, field.name)
+            if (
+                isinstance(value, FlatSerializable)
+                and value is not None
+            ):
+                base.update(value.to_flat_dict())
+            elif not is_dataclass(value):
+                base[f"{prefix}_{field.name}"] = value
+        return base
