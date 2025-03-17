@@ -283,7 +283,6 @@ class Apartment(FlatSerializable):
                     raw_details=raw_details,
                 )
             elif k in outer_keys_map:
-                print(f"{k=}, {value=}")
                 if value is not None:
                     apartment_info[outer_keys_map[k]] = float(
                         re.search(
