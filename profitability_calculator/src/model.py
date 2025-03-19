@@ -109,21 +109,19 @@ class BasicFeatures(FlatSerializable, BaseFromRaw):
     def from_raw(cls, raw: str) -> Self:
         basic_features = cls()
         for v in raw.split(";"):
-            if " m² construidos, " in v and " m² útiles" in v:
-                numbers = [int(num) for num in re.findall(r"(\d+)", v)]
-                if len(numbers) == 2:
-                    (
-                        basic_features.sqm_constructed,
-                        basic_features.sqm_usable,
-                    ) = numbers
-            elif "m² construidos" in v:
-                digit = utils.get_digit(text=v)
-                if digit is not None:
-                    basic_features.sqm_constructed = float(digit)
-            elif "m² útiles" in v:
-                digit = utils.get_digit(text=v)
-                if digit is not None:
-                    basic_features.sqm_usable = float(digit)
+            if "m² construidos" in v or "m² útiles" in v:
+                match = re.search(
+                    r"(?:(\d+)\s*m² construidos)?(?:,\s*)?(?:(\d+)\s*m² útiles)?",
+                    v,
+                )
+                if match is not None:
+                    constructed, usable = match.groups()
+                    if constructed:
+                        basic_features.sqm_constructed = float(
+                            constructed,
+                        )
+                    if usable:
+                        basic_features.sqm_usable = float(usable)
 
             if "habitación" in v or "habitaciones" in v:
                 if "Sin " in v:
