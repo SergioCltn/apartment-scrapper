@@ -1,14 +1,8 @@
-import logging
 import re
 from dataclasses import asdict, dataclass, fields, is_dataclass
 from typing import Any, Self
 
 import utils
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s",
-)
 
 
 class FlatSerializable:
