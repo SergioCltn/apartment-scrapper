@@ -1,4 +1,12 @@
+import re
 import sqlite3
+
+
+def get_digit(text: str) -> None | str:
+    match = re.search(r"(\d+)", text)
+    if match is not None:
+        return match.group(1)
+    return None
 
 
 def fetch_table(

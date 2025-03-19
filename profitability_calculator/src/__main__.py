@@ -13,7 +13,7 @@ logging.basicConfig(
 
 
 def main():
-    db_path = "local/scraped_data.db"
+    db_path = "../local/apartments.db"
     table = "apartments"
     with contextlib.closing(sqlite3.connect(db_path)) as conn:
         raw_apartments = utils.fetch_table(conn, table)

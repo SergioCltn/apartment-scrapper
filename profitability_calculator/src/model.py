@@ -1,8 +1,9 @@
-import json
 import logging
 import re
 from dataclasses import asdict, dataclass, fields, is_dataclass
-from typing import Any
+from typing import Any, Self
+
+import utils
 
 logging.basicConfig(
     level=logging.INFO,
@@ -11,8 +12,20 @@ logging.basicConfig(
 
 
 class FlatSerializable:
-    def to_flat_dict(self, prefix: str = None) -> dict[str, Any]:
-        """Convert the dataclass into a flat dictionary."""
+    def to_flat_dict(self, prefix: str = "") -> dict[str, Any]:
+        """To be implemented by child classes"""
+        raise NotImplementedError(
+            "Subclasses must implement to_flat_dict()",
+        )
+
+
+class BaseFromRaw:
+    @classmethod
+    def from_raw(cls, raw: str) -> Self:
+        """To be implemented by child classes"""
+        raise NotImplementedError(
+            "Subclasses must implement from_raw()",
+        )
 
 
 @dataclass
@@ -26,7 +39,7 @@ class Address(FlatSerializable):
     autonomous_community: str | None = None
 
     @classmethod
-    def from_location(cls, location: str) -> "Address":
+    def from_location(cls, location: str) -> Self:
         """Create an Address instance from a location string.
 
         Args:
@@ -70,7 +83,7 @@ class Address(FlatSerializable):
 
 
 @dataclass
-class Details(FlatSerializable):
+class BasicFeatures(FlatSerializable, BaseFromRaw):
     n_rooms: int | None = None
     sqm_constructed: float | None = None
     sqm_usable: float | None = None
@@ -83,159 +96,172 @@ class Details(FlatSerializable):
     heating: str | None = None
     reduced_mobility: str | None = None
     garage: str | None = None
-    extra: str | None = None
-
-    elevator: bool | None = None
-    inside: bool | None = None
-    floor: int | None = None
-
-    kwh_sqm_year_emissions: float | None = None
-    kg_co2_sqm_year_consumption: float | None = None
-
-    tenant: str | None = None
-    certificate: str | None = None
 
     storage_room: bool = False
     built_in_wardrobes: bool = False
     air_conditioning: bool = False
-    semi_detached_house: bool = False
+    semi_detached_house: str | None = None
     green_areas: bool = False
     pool: bool = False
     new_building_development: bool = False
 
     @classmethod
-    def from_raw_details(
-        cls,
-        raw_details: dict,
-    ) -> "Details":
-        details = cls()
-        for k, value in raw_details.items():
-            for val in value:
-                v: str = val
-                if " m² construidos, " in v and " m² útiles" in v:
-                    numbers = [
-                        int(num) for num in re.findall(r"(\d+)", v)
-                    ]
-                    if len(numbers) == 2:
-                        (
-                            details.sqm_constructed,
-                            details.sqm_usable,
-                        ) = numbers
+    def from_raw(cls, raw: str) -> Self:
+        basic_features = cls()
+        for v in raw.split(";"):
+            if " m² construidos, " in v and " m² útiles" in v:
+                numbers = [int(num) for num in re.findall(r"(\d+)", v)]
+                if len(numbers) == 2:
+                    (
+                        basic_features.sqm_constructed,
+                        basic_features.sqm_usable,
+                    ) = numbers
+            elif "m² construidos" in v:
+                digit = utils.get_digit(text=v)
+                if digit is not None:
+                    basic_features.sqm_constructed = float(digit)
+            elif "m² útiles" in v:
+                digit = utils.get_digit(text=v)
+                if digit is not None:
+                    basic_features.sqm_usable = float(digit)
 
-                elif "m² construidos" in v:
-                    details.sqm_constructed = float(
-                        re.search(r"(\d+)", v).group(1),
-                    )
-                elif "m² útiles" in v:
-                    details.sqm_usable = float(
-                        re.search(r"(\d+)", v).group(1),
-                    )
-                elif "habitación" in v or "habitaciones" in v:
-                    if "Sin " in v:
-                        details.n_rooms = 0
-                    else:
-                        details.n_rooms = int(
-                            re.search(r"(\d+)", v).group(1),
-                        )
-                elif "baño" in v:
-                    details.bathrooms = int(
-                        re.search(r"(\d+)", v).group(1),
-                    )
-                elif "Terraza y balcón" in v:
-                    details.terrace = True
-                    details.balcony = True
-                elif "Terraza" in v:
-                    details.terrace = True
-                elif "Balcón" in v:
-                    details.balcony = True
-                elif "Segunda mano" in v:
-                    details.state = v
-                elif "Orientación" in v:
-                    details.orientation = v.replace(
-                        "Orientación ",
-                        "",
-                    )
-                elif "Construido en " in v:
-                    details.built_in = int(
-                        re.search(r"(\d+)", v).group(1),
-                    )
-                elif "calefacción" in v.lower():
-                    details.heating = v
-                elif "movilidad reducida" in v:
-                    details.reduced_mobility = v
-                elif "garaje" in v:
-                    details.garage = v
-                elif "Sin ascensor" in v:
-                    details.elevator = False
-                elif "Con ascensor" in v:
-                    details.elevator = True
-                elif "planta " in v.lower() or "Bajo" in v:
-                    if "Entreplanta " in v or "Bajo" in v:
-                        details.floor = 0
-                    else:
-                        details.floor = int(
-                            re.search(r"(\d+)(?=ª)", v).group(1),
-                        )
-                    if "exterior" in v:
-                        details.inside = False
-                    elif "interior" in v:
-                        details.inside = True
-                elif "interior" in v:
-                    details.inside = True
-                elif "exterior" in v:
-                    details.inside = False
-                elif "Emisiones: \n" in v:
-                    details.kwh_sqm_year_emissions = float(
-                        re.search(r"(\d+)", v).group(1),
-                    )
-                elif "Consumo: \n" in v:
-                    details.kg_co2_sqm_year_consumption = float(
-                        re.search(r"(\d+)", v).group(1),
-                    )
-                elif "Certificado" in k and "Consumo:" in v:
-                    details.certificate = None
-                elif (
-                    "Consumo:" in v
-                    or "Emisiones:" in v
-                    or "No indicado" in v
-                ):
-                    pass
-                elif (
-                    "Inmueble exento" in v
-                    or "En trámite" in v
-                    or "No indicado" in v
-                ):
-                    details.certificate = v
-                elif (
-                    "Alquilada, con inquilinos" in v
-                    or "Ocupada ilegalmente" in v
-                ):
-                    details.tenant = v
-                elif "Trastero" in v:
-                    details.storage_room = True
-                elif "Aire acondicionado" in v:
-                    details.air_conditioning = True
-                elif "Armarios empotrados" in v:
-                    details.built_in_wardrobes = True
-                elif "Chalet adosado" in v:
-                    details.semi_detached_house = True
-                elif "Zonas verdes" in v:
-                    details.green_areas = True
-                elif "Piscina" in v:
-                    details.pool = True
-                elif "Promoción de obra nueva" in v:
-                    details.new_building_development = True
+            if "habitación" in v or "habitaciones" in v:
+                if "Sin " in v:
+                    basic_features.n_rooms = 0
                 else:
-                    logging.getLogger(__name__).warning(
-                        "Value {%s: %s} from details could not be parsed, adding it to extra",
-                        k,
-                        v,
-                    )
-                    details.extra = v
+                    digit = utils.get_digit(text=v)
+                    if digit is not None:
+                        basic_features.n_rooms = int(digit)
+            if "baño" in v:
+                digit = utils.get_digit(text=v)
+                if digit is not None:
+                    basic_features.bathrooms = int(digit)
 
-        return details
+            if "terraza" in v.lower():
+                basic_features.terrace = True
+            if "balcón" in v.lower():
+                basic_features.balcony = True
+            if "Segunda mano" in v:
+                basic_features.state = v
+            if "Orientación" in v:
+                basic_features.orientation = v.replace(
+                    "Orientación ",
+                    "",
+                )
+            if "Construido en " in v:
+                digit = utils.get_digit(text=v)
+                if digit is not None:
+                    basic_features.built_in = int(digit)
+            if "calefacción" in v.lower():
+                basic_features.heating = v
+            if "movilidad reducida" in v:
+                basic_features.reduced_mobility = v
+            if "garaje" in v:
+                basic_features.garage = v
+            if "Chalet" in v:
+                basic_features.semi_detached_house = v
 
-    def to_flat_dict(self, prefix="details") -> dict[str, Any]:
+            if "Trastero" in v:
+                basic_features.storage_room = True
+            if "Aire acondicionado" in v:
+                basic_features.air_conditioning = True
+            if "Armarios empotrados" in v:
+                basic_features.built_in_wardrobes = True
+            if "Zonas verdes" in v:
+                basic_features.green_areas = True
+            if "Piscina" in v:
+                basic_features.pool = True
+            if "Promoción de obra nueva" in v:
+                basic_features.new_building_development = True
+        return basic_features
+
+    def to_flat_dict(
+        self,
+        prefix="basic_features",
+    ) -> dict[str, Any]:
+        return {f"{prefix}_{k}": v for k, v in asdict(self).items()}
+
+
+@dataclass
+class Building(FlatSerializable, BaseFromRaw):
+    elevator: bool | None = None
+    inside: bool | None = None
+    floor: int | None = None
+
+    @classmethod
+    def from_raw(cls, raw: str) -> Self:
+        building = cls()
+        for v in raw.split(";"):
+            if "Sin ascensor" in v:
+                building.elevator = False
+            elif "Con ascensor" in v:
+                building.elevator = True
+
+            if "Entreplanta " in v or "Bajo" in v:
+                building.floor = 0
+            elif "planta " in v.lower():
+                digit = re.search(r"(\d+)(?=ª)", v)
+                if digit is not None:
+                    building.floor = int(digit.group(1))
+
+            if "interior" in v:
+                building.inside = True
+            elif "exterior" in v:
+                building.inside = False
+        return building
+
+    def to_flat_dict(
+        self,
+        prefix="building",
+    ) -> dict[str, Any]:
+        return {f"{prefix}_{k}": v for k, v in asdict(self).items()}
+
+
+@dataclass
+class EnergyCerticate(FlatSerializable, BaseFromRaw):
+    certificate: str | None = None
+    kwh_sqm_year_emissions: float | None = None
+    kg_co2_sqm_year_consumption: float | None = None
+
+    @classmethod
+    def from_raw(cls, raw: str) -> Self:
+        e_cert = cls()
+        for v in raw.split(";"):
+            if "Emisiones: \n" in v:
+                digit = utils.get_digit(text=v)
+                if digit is not None:
+                    e_cert.kwh_sqm_year_emissions = float(digit)
+            if "Consumo: \n" in v:
+                digit = utils.get_digit(text=v)
+                if digit is not None:
+                    e_cert.kg_co2_sqm_year_consumption = float(digit)
+            if (
+                "Inmueble exento" in v
+                or "En trámite" in v
+                or "No indicado" in v
+            ):
+                e_cert.certificate = v
+        return e_cert
+
+    def to_flat_dict(
+        self,
+        prefix="energy_certificate",
+    ) -> dict[str, Any]:
+        return {f"{prefix}_{k}": v for k, v in asdict(self).items()}
+
+
+@dataclass
+class Status(FlatSerializable, BaseFromRaw):
+    tenant: str | None = None
+
+    @classmethod
+    def from_raw(cls, raw: str) -> Self:
+        status = cls()
+        if raw:
+            status.tenant = raw
+        return status
+
+    def to_flat_dict(self, prefix="status") -> dict[str, Any]:
         return {f"{prefix}_{k}": v for k, v in asdict(self).items()}
 
 
@@ -251,10 +277,13 @@ class Apartment(FlatSerializable):
 
     address: Address | None = None
 
-    details: Details | None = None
+    basic_features: BasicFeatures | None = None
+    building: Building | None = None
+    energy_certificate: EnergyCerticate | None = None
+    status: Status | None = None
 
     @classmethod
-    def from_raw_apartment(cls, raw_apartment: dict) -> "Apartment":
+    def from_raw_apartment(cls, raw_apartment: dict) -> Self:
         """Create an Apartment instance from a raw apartment dictionary.
 
         Args:
@@ -271,33 +300,41 @@ class Apartment(FlatSerializable):
         }
 
         apartment_info = {}
-        address = None
-        details = None
         for k, value in raw_apartment.items():
-            if k == "location":
-                address = Address.from_location(value)
-                apartment_info[k] = value
-            elif k == "details":
-                raw_details = json.loads(value)
-                details = Details.from_raw_details(
-                    raw_details=raw_details,
-                )
-            elif k in outer_keys_map:
-                if value is not None:
-                    apartment_info[outer_keys_map[k]] = float(
-                        re.search(
-                            r"(\d{1,3}(?:\.\d{3})*)(?:\s?.*)?",
-                            value,
-                        )
-                        .group(1)
-                        .replace(".", ""),
+            if k in outer_keys_map:
+                if value is not None and value != "":
+                    match = re.search(
+                        r"(\d{1,3}(?:\.\d{3})*)(?:\s?.*)?",
+                        value,
                     )
+                    if match is not None:
+                        apartment_info[outer_keys_map[k]] = float(
+                            match.group(1).replace(".", ""),
+                        )
             elif k in ["title", "description", "id"]:
                 apartment_info[k] = value
 
         apartment = cls(**apartment_info)
-        apartment.address = address
-        apartment.details = details
+
+        loaction_v = raw_apartment["location"]
+        apartment.location = loaction_v
+        apartment.address = Address.from_location(loaction_v)
+
+        apartment.basic_features = BasicFeatures.from_raw(
+            raw=raw_apartment["basicFeatures"],
+        )
+
+        apartment.building = Building.from_raw(
+            raw=raw_apartment["building"],
+        )
+
+        apartment.energy_certificate = EnergyCerticate.from_raw(
+            raw=raw_apartment["energyCertificate"],
+        )
+
+        apartment.status = Status.from_raw(
+            raw=raw_apartment["apartmentStatus"],
+        )
 
         return apartment
 
